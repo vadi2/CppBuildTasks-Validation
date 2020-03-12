@@ -1,7 +1,7 @@
 # Copyright (c) 2019-2020 Luca Cappa
 # Released under the term specified in file LICENSE.txt
 # SPDX short identifier: MIT
-name: hosted-advanced
+name: hosted-advanced-setup-vcpkg
 on: [push]
 
 jobs:
@@ -40,14 +40,25 @@ jobs:
       - name: dir
         run: gci -recurse ${{ runner.workspace }}
         if: contains( matrix.os, 'windows')
-      - name: Run vcpkg
+      - name: Setup vcpkg (do not install any package)
         uses: lukka/run-vcpkg@add_shell_support
         id: runvcpkg
         with:
-          vcpkgArguments: '${{ matrix.vcpkgPackages }}'
+          setupOnly: true
           vcpkgDirectory: '${{ runner.workspace }}/b/vcpkg'
-          vcpkgTriplet: '${{ matrix.triplet }}'
           vcpkgGitCommitId: '${{ matrix.vcpkgCommitId}}'
+      - name: Set vcpkg's response file path used as part of cache's key.
+        uses: lukka/set-shell-env@v0
+        with:
+          VCPKGRESPONSEFILE: ${{ github.workspace }}/cmakelists.txt/vcpkg_${{ matrix.triplet }}.txt
+          VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
+      - run: |
+          $VCPKG_ROOT/vcpkg install @$VCPKGRESPONSEFILE --clean-after-build
+          rm -rfv $VCPKG_ROOT/buildtrees
+          rm -rfv $VCPKG_ROOT/packages
+          rm -rfv $VCPKG_ROOT/downloads
+        shell: bash
+        name: Run vcpkg in a inline script in this workflow.
       - name: Prints output of run-vcpkg's task
         run: echo "root='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_ROOT_OUT }}', triplet='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_TRIPLET_OUT }}' "
       - name: Run CMake+EnvVar
@@ -58,7 +69,7 @@ jobs:
           cmakeListsTxtPath: '${{ github.workspace }}/cmakelists.txt/CMakeLists.txt'
           useVcpkgToolchainFile: true
           buildDirectory: '${{ runner.workspace }}/b/envvar_ninja'
-          cmakeAppendedArgs: '-GNinja -DCMAKE_TOOLCHAIN_FILE=${ANDROID_SDK_ROOT}/ndk-bundle/build/cmake/android.toolchain.cmake'
+          cmakeAppendedArgs: '-GNinja -DVCPKG_TARGET_TRIPLET=${{ env.VCPKG_DEFAULT_TRIPLET }} -DCMAKE_TOOLCHAIN_FILE=${ANDROID_SDK_ROOT}/ndk-bundle/build/cmake/android.toolchain.cmake'
       - name: Run CMake+Ninja
         uses: lukka/run-cmake@add_shell_support
         id: runcmake
@@ -76,7 +87,7 @@ jobs:
           cmakeListsTxtPath: '${{ github.workspace }}/cmakelists.txt/CMakeLists.txt'
           useVcpkgToolchainFile: true
           buildDirectory: '${{ runner.workspace }}/b/vs16'
-          cmakeAppendedArgs: '-G"Visual Studio 16 2019" -Ax64'
+          cmakeAppendedArgs: '-G "Visual Studio 16 2019" -A x64'
       - name: 'Run CMake with CMakeSettings.json'
         uses: lukka/run-cmake@add_shell_support
         with:
